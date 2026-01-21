@@ -1,0 +1,60 @@
+import streamlit as st
+import pandas as pd
+import re
+
+def extract_matricule_precise(df_raw):
+    """Cherche spécifiquement le mot 'MATRICULE' et extrait les chiffres associés."""
+    for row in df_raw.values:
+        for cell in row:
+            cell_str = str(cell).upper()
+            if "MATRICULE" in cell_str:
+                # Extrait uniquement les chiffres (ex: 00941)
+                match = re.search(r'(\d+)', cell_str)
+                if match:
+                    return match.group(1)
+                # Si non trouvé dans la même cellule, on peut chercher dans la cellule suivante
+                # mais le regex ci-dessus couvre généralement 'MATRICULE : 00941'
+    return "Non trouvé"
+
+def decimal_to_time(decimal_hours):
+    if pd.isna(decimal_hours) or decimal_hours == "":
+        return "00:00"
+    try:
+        total_seconds = int(float(decimal_hours) * 3600)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        return f"{hours:02d}:{minutes:02d}"
+    except:
+        return "00:00"
+
+st.set_page_config(page_title="Pointage IA", layout="wide")
+
+st.title("📊 Application de Pointage Automatique")
+
+uploaded_file = st.file_uploader("Chargez votre fichier Excel (ex: ALAMI SAID...)", type=['xlsx'])
+
+if uploaded_file:
+    # 1. Analyse des 15 premières lignes pour trouver le matricule
+    header_data = pd.read_excel(uploaded_file, header=None).head(15)
+    matricule = extract_matricule_precise(header_data)
+    
+    # 2. Chargement des données de pointage (saute les lignes d'en-tête)
+    df = pd.read_excel(uploaded_file, skiprows=11)
+    df = df.dropna(subset=[df.columns[1]]) # Nettoie les lignes vides
+    
+    # 3. Création du tableau final selon votre capture
+    final_table = pd.DataFrame()
+    final_table['matricule'] = [matricule] * len(df)
+    final_table['nom'] = "ALAMI"
+    final_table['prenom'] = "SAID"
+    final_table['date'] = pd.to_datetime(df.iloc[:, 1]).dt.strftime('%d/%m/%Y')
+    final_table["heure d'entrée"] = df.iloc[:, 2]
+    final_table["heure de sortie"] = df.iloc[:, 3]
+    final_table["N° heures effectuées"] = df.iloc[:, 7].apply(decimal_to_time)
+
+    # Affichage du résultat
+    st.info(f"Matricule extrait automatiquement : **{matricule}**")
+    st.table(final_table)
+    
+    # Bouton Export
+    st.download_button("Télécharger le tableau (CSV)", final_table.to_csv(index=False), "resultat.csv")
